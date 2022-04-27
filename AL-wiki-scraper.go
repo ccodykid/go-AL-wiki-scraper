@@ -12,10 +12,6 @@ var c = colly.NewCollector(
 	colly.AllowedDomains("azurlane.koumakan.jp", "azurlane.netojuu.com"),
 )
 
-// TODO: func get_link()
-// TODO: implement get class
-// TODO: implement download image
-
 func get_img(img_src string) {
 	img_coll := c.Clone()
 
