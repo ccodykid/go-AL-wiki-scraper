@@ -3,46 +3,80 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/gocolly/colly/v2"
 )
 
-var c = colly.NewCollector(
-	colly.AllowedDomains("azurlane.koumakan.jp", "azurlane.netojuu.com"),
-)
+func get_img(collector *colly.Collector, img_src_dump []string) {
+	img_collector := collector.Clone()
 
-func get_img(img_src string) {
-	img_coll := c.Clone()
-
-	img_coll.OnRequest(func(r *colly.Request) {
+	img_collector.OnRequest(func(r *colly.Request) {
 		log.Println("Coll-3 Visiting: ", r.URL)
 	})
 
-	img_coll.OnResponse(func(r *colly.Response) {
+	img_collector.OnResponse(func(r *colly.Response) {
 		log.Printf("%d", r.StatusCode)
 		r.Save(r.FileName())
 		log.Printf("Coll-3 Successfully saved %s", r.FileName())
 	})
 
-	img_coll.Visit(img_src)
+	for _, link := range img_src_dump {
+		img_collector.Visit(link)
+	}
+
 }
 
-func get_img_url(url string, link string) {
-	icon_coll := c.Clone()
+func get_img_url(collector *colly.Collector, link_dump []string) []string {
+	icon_collector := collector.Clone()
+	var img_src_dump []string
 
-	icon_coll.OnHTML("div[class*=shipgirl-image]", func(h *colly.HTMLElement) {
+	icon_collector.OnHTML("div[class*=shipgirl-image]", func(h *colly.HTMLElement) {
 		img_src := h.ChildAttr("img:first-child", "src")
-		log.Printf(img_src)
+		log.Println("Found: ", img_src)
 
-		get_img(img_src)
+		img_src_dump = append(img_src_dump, img_src)
 	})
 
-	icon_coll.OnRequest(func(r *colly.Request) {
+	icon_collector.OnRequest(func(r *colly.Request) {
 		log.Println("Coll-2 Visiting: ", r.URL)
 	})
 
-	icon_coll.Visit(url)
+	for _, link := range link_dump {
+		icon_collector.Visit(link)
+	}
+
+	return img_src_dump
+}
+
+func get_ship_url(collector *colly.Collector, root_url string) []string {
+	link_collector := collector.Clone()
+	var link_dump []string
+
+	link_collector.OnHTML("table tbody tr", func(h *colly.HTMLElement) {
+
+		href_attr := h.ChildAttr("td:nth-child(2) > a", "href")
+		url := h.Request.AbsoluteURL(href_attr)
+
+		link_dump = append(link_dump, url)
+	})
+
+	link_collector.OnHTML("title", func(h *colly.HTMLElement) {
+		fmt.Println(h.Text)
+	})
+
+	link_collector.OnRequest(func(r *colly.Request) {
+		fmt.Println("Coll-1 Visiting", r.URL)
+	})
+
+	link_collector.Visit(root_url)
+
+	link_collector.OnError(func(_ *colly.Response, err error) {
+		fmt.Println("Something went wrong:", err)
+	})
+
+	return link_dump
 }
 
 func create_filename(link string, counter int) string {
@@ -51,33 +85,24 @@ func create_filename(link string, counter int) string {
 	return filename
 }
 
+func create_dir(dir string) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
 func main() {
 
-	counter := 0
+	var root_url = "https://azurlane.koumakan.jp/wiki/List_of_Ships"
 
-	link_coll := c.Clone()
+	var parent_collector = colly.NewCollector(
+		colly.AllowedDomains("azurlane.koumakan.jp", "azurlane.netojuu.com"),
+	)
 
-	link_coll.OnHTML("table tbody tr", func(h *colly.HTMLElement) {
-
-		link := h.ChildAttr("td:nth-child(2) > a", "href")
-		url := h.Request.AbsoluteURL(link)
-
-		get_img_url(url, link)
-	})
-
-	link_coll.OnHTML("title", func(h *colly.HTMLElement) {
-		fmt.Println(h.Text)
-	})
-
-	link_coll.OnRequest(func(r *colly.Request) {
-		fmt.Println("Coll-1 Visiting", r.URL)
-	})
-
-	link_coll.Visit("https://azurlane.koumakan.jp/wiki/List_of_Ships")
-
-	link_coll.OnError(func(_ *colly.Response, err error) {
-		fmt.Println("Something went wrong:", err)
-	})
-
-	fmt.Println(counter)
+	ship_url_list := get_ship_url(parent_collector, root_url)
+	img_url_list := get_img_url(parent_collector, ship_url_list)
+	get_img(parent_collector, img_url_list)
 }
