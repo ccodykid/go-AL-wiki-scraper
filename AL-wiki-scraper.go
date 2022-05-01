@@ -79,7 +79,7 @@ func main() {
 		colly.AllowedDomains("azurlane.koumakan.jp", "azurlane.netojuu.com"),
 	)
 
-	var dir = create_dir("images")
+	var output_dir = create_dir("images")
 
-	dl_ship_img(parent_collector, root_url, dir)
+	dl_ship_img(parent_collector, root_url, output_dir)
 }
