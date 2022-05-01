@@ -4,94 +4,71 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/gocolly/colly/v2"
 )
 
-func get_img(collector *colly.Collector, img_src_dump []string) {
-	img_collector := collector.Clone()
+func dl_ship_img(collector *colly.Collector, root_url string, dir string) {
+	base_url_collector := collector.Clone()
 
-	img_collector.OnRequest(func(r *colly.Request) {
-		log.Println("Coll-3 Visiting: ", r.URL)
-	})
-
-	img_collector.OnResponse(func(r *colly.Response) {
-		log.Printf("%d", r.StatusCode)
-		r.Save(r.FileName())
-		log.Printf("Coll-3 Successfully saved %s", r.FileName())
-	})
-
-	for _, link := range img_src_dump {
-		img_collector.Visit(link)
-	}
-
-}
-
-func get_img_url(collector *colly.Collector, link_dump []string) []string {
-	icon_collector := collector.Clone()
-	var img_src_dump []string
-
-	icon_collector.OnHTML("div[class*=shipgirl-image]", func(h *colly.HTMLElement) {
-		img_src := h.ChildAttr("img:first-child", "src")
-		log.Println("Found: ", img_src)
-
-		img_src_dump = append(img_src_dump, img_src)
-	})
-
-	icon_collector.OnRequest(func(r *colly.Request) {
-		log.Println("Coll-2 Visiting: ", r.URL)
-	})
-
-	for _, link := range link_dump {
-		icon_collector.Visit(link)
-	}
-
-	return img_src_dump
-}
-
-func get_ship_url(collector *colly.Collector, root_url string) []string {
-	link_collector := collector.Clone()
-	var link_dump []string
-
-	link_collector.OnHTML("table tbody tr", func(h *colly.HTMLElement) {
+	base_url_collector.OnHTML("table tbody tr", func(h *colly.HTMLElement) {
 
 		href_attr := h.ChildAttr("td:nth-child(2) > a", "href")
 		url := h.Request.AbsoluteURL(href_attr)
 
-		link_dump = append(link_dump, url)
+		img_url_collector := collector.Clone()
+
+		img_url_collector.OnHTML("div[class*=shipgirl-image]", func(h *colly.HTMLElement) {
+
+			img_src := h.ChildAttr("img:first-child", "src")
+			log.Println("[Coll-3] Found: ", img_src)
+
+			img_src_collector := collector.Clone()
+
+			img_src_collector.OnRequest(func(r *colly.Request) {
+				log.Printf("[Coll-3] Visiting: %s", r.URL)
+			})
+
+			img_src_collector.OnResponse(func(r *colly.Response) {
+				r.Save(filepath.Join(dir, r.FileName()))
+				log.Printf("[Coll-3] Successfully saved %s", r.FileName())
+			})
+
+			img_src_collector.Visit(img_src)
+		})
+
+		img_url_collector.OnRequest(func(r *colly.Request) {
+			log.Printf("[Coll-2] Visiting: %s", r.URL)
+		})
+
+		img_url_collector.Visit(url)
 	})
 
-	link_collector.OnHTML("title", func(h *colly.HTMLElement) {
+	base_url_collector.OnHTML("title", func(h *colly.HTMLElement) {
 		fmt.Println(h.Text)
 	})
 
-	link_collector.OnRequest(func(r *colly.Request) {
-		fmt.Println("Coll-1 Visiting", r.URL)
+	base_url_collector.OnRequest(func(r *colly.Request) {
+		log.Printf("[Coll-1] Visiting: %s", r.URL)
 	})
 
-	link_collector.Visit(root_url)
+	base_url_collector.Visit(root_url)
 
-	link_collector.OnError(func(_ *colly.Response, err error) {
-		fmt.Println("Something went wrong:", err)
+	base_url_collector.OnError(func(_ *colly.Response, err error) {
+		log.Println("Something went wrong:", err)
 	})
-
-	return link_dump
 }
 
-func create_filename(link string, counter int) string {
-	ship_name := strings.Split(link, "/")[2]
-	filename := fmt.Sprintf("%d_%s.png", counter, ship_name)
-	return filename
-}
-
-func create_dir(dir string) {
+func create_dir(dir string) string {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		err := os.MkdirAll(dir, 0755)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
+
+	return dir
 }
 
 func main() {
@@ -102,7 +79,7 @@ func main() {
 		colly.AllowedDomains("azurlane.koumakan.jp", "azurlane.netojuu.com"),
 	)
 
-	ship_url_list := get_ship_url(parent_collector, root_url)
-	img_url_list := get_img_url(parent_collector, ship_url_list)
-	get_img(parent_collector, img_url_list)
+	var dir = create_dir("images")
+
+	dl_ship_img(parent_collector, root_url, dir)
 }
